@@ -17,6 +17,7 @@
 	 get_password/2,
 	 get_password_s/2,
 	 is_user_exists/2,
+	 store_type/0,
 	 remove_user/2,
 	 remove_user/3,
 	 plain_password_required/0
@@ -40,6 +41,9 @@ stop(Host) ->
 %% @spec () -> bool()
 plain_password_required() ->
     true.
+
+store_type() ->
+    external.
 
 %% @spec (User, Server, Password) -> bool()
 %%     User = string() = JID Node

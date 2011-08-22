@@ -429,6 +429,8 @@ process_term(Term, State) ->
 	    add_option(clusterid, ClusterID, State);
 	{json_api_server, Url} ->
 	    add_option(json_api_server, Url, State);
+	{chat_idle_timeout, IdleTimeout} ->
+	    add_option(chat_idle_timeout, IdleTimeout, State);
 	{listen, Listeners} ->
 	    Listeners2 =
 		lists:map(

@@ -28,7 +28,7 @@
 
 -record(state, {state=stopped}).
 -record(key,{jid_one,jid_two}). 			 % to force the key for mnesia table to the form of {User, Contact}
--record(chatlog, {key, timestamp, message}). % message = binary() | end_conversation
+-record(chatlog, {key, from, to, timestamp, message}). % message = binary() | end_conversation
 
 
 % TODO: <gone xmlns='http://jabber.org/protocol/chatstates'/>
@@ -194,7 +194,7 @@ process_message(From, To, MessagePacket) ->
 				delete_chatlog(ChatlogKey);
 			_ -> nothing
 		end,
-		store_message(ChatlogKey, Message);
+		store_message(ChatlogKey, LFrom, LTo, Message);
 		
 	true -> ok
 	end,
@@ -271,9 +271,9 @@ select_inactive_conversations() ->
 %%		Message = binary()
 %%
 %% @doc Stores a new message for a conversation in mnesia.
-store_message(ChatlogKey, Message) ->
+store_message(ChatlogKey, From, To, Message) ->
 	Timestamp = make_timestamp(),
-	Row = #chatlog{key=ChatlogKey, timestamp=Timestamp, message=Message},
+	Row = #chatlog{key=ChatlogKey, from=From, to=To, timestamp=Timestamp, message=Message},
 	Size = message_size(Message),
 	% Do all db related operations in transaction to avoid race condition.
 	F = fun() ->
@@ -306,7 +306,7 @@ delete_chatlog(ChatlogKey) ->
 %% @doc Pushes a single conversation between two users to backend.
 push_chatlog(ChatlogKey) ->
 	F = fun() ->
-		mnesia:select(chatlog, [{#chatlog{key=ChatlogKey, timestamp='$1', message='$2'},[],[{{'$1','$2'}}]}])
+		mnesia:select(chatlog, [{#chatlog{key=ChatlogKey, from='$1', to='$2', timestamp='$3', message='$4'},[],[{{'$1','$2','$3','$4'}}]}])
 	end,
 	case mnesia:transaction(F) of
 		{atomic, Result} ->

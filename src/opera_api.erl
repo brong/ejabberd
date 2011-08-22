@@ -454,9 +454,9 @@ delete_offline_message(User, Id) ->
 %%		Contact = string()
 %%		Messages = [string()]
 store_chatlog(User, Contact, Messages) ->
-	Items = lists:map(fun({Timestamp, Message}) -> 
-						SubParamFrom = {"from", User},
-						SubParamTo = {"to", Contact},
+	Items = lists:map(fun({From, To, Timestamp, Message}) -> 
+						SubParamFrom = {"from", From},
+						SubParamTo = {"to", To},
 						SubParamTime = {"time", Timestamp},
 						SubParamText = {"text", Message},
 						{struct,[SubParamFrom, SubParamTo, SubParamTime, SubParamText]}
@@ -464,7 +464,7 @@ store_chatlog(User, Contact, Messages) ->
 	RequestType = {"Action", "ChatLog"},
 	ParamUser = {"jid", User},
 	ParamContact = {"tojid", Contact},
-	{InitialConversationTimestamp, _Message} = hd(Messages),
+	{_From, _To, InitialConversationTimestamp, _Message} = hd(Messages),
 	ParamFirst = {"first", InitialConversationTimestamp},
 	ParamItems = {"items", {array,Items}},
 	Request = [RequestType, ParamUser, ParamContact, ParamFirst, ParamItems],

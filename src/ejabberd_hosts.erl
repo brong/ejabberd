@@ -1,82 +1,33 @@
-%%%-------------------------------------------------------------------
-%%% File    : ejabberd_hosts.erl
-%%% Author  : Alexey Shchepin <alexey@process-one.net>
-%%% Description : Synchronises running VHosts with the hosts table in the Mnesia database.
-%%% Created : 16 Nov 2007 by Alexey Shchepin <alexey@process-one.net>
-%%%-------------------------------------------------------------------
 
-%%% Database schema (version / storage / table)
-%%%
-%%% The table 'hosts' keeps the dynamic hosts (not defined in ejabberd.cfg)
-%%%
-%%% 3.0.0-alpha-x / mnesia / hosts
-%%%  host = string()
-%%%  clusterid = integer()
-%%%  config = string() 
-%%%
-%%% 3.0.0-alpha-x / odbc / hosts
-%%%  host = varchar150
-%%%  clusterid = integer
-%%%  config = text 
 
 -module(ejabberd_hosts).
-
 -behaviour(gen_server).
-
-%% External API
--export([start_link/0
-         ,reload/0
-        ]).
-
-%% Host Registration API
--export([register/1
-         ,register/2
-         ,registered/1
-         ,running/1
-         ,registered/0
-         ,remove/1
-         ,update_host_conf/2
-        ]).
-
-%% Host control API
--export([start_host/1
-         ,start_hosts/1
-         ,stop_host/1
-         ,stop_hosts/1
-         ,load_host_cert/2
-         ]).
-
-%% Private utility functions
--export([get_hosts/1
-         ,config_from_string/2
-         ,get_host_config/2
-         ,diff_hosts/0
-         ,diff_hosts/1
-         ,diff_hosts/2
-         ,reload_hosts/0
-         ,delete_host_config/1
-        ]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
 
 -include("ejabberd.hrl").
 -include("ejabberd_commands.hrl").
 -include("ejabberd_config.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
--record(state, {state=wait_odbc,
-                backend=mnesia,
-                odbc_wait_time=120}).
+%% External API
+-export([start_link/0,reload/0]).
+%% Host Registration API
+-export([register/1,register/2,registered/1,running/1,registered/0,remove/1,update_host_conf/2]).
+%% Host control API
+-export([start_host/1,start_hosts/1,stop_host/1,stop_hosts/1]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+%% Additional API
+-export([is_dynamic_vhost/1, is_static_vhost/1, get_dynamic_hosts/0, get_static_hosts/0]).
+
+-record(state, {state=stopped}).
 -record(hosts, {host, clusterid, config}).
 
--define(RELOAD_INTERVAL, timer:seconds(60)).
--define(ODBC_STARTUP_TIME, 120). % 2minute limit for ODBC startup.
+-define(RELOAD_INTERVAL, timer:seconds(500)).
 
 %% The vhost where the table 'hosts' is stored
 %% The table 'hosts' is defined in gen_storage as being for the "localhost" vhost
 -define(HOSTS_HOST, list_to_binary(?MYNAME)).
+
 
 %%====================================================================
 %% API
@@ -85,7 +36,7 @@
 reload() ->
     ?MODULE ! reload.
 
-%% Creates a vhost in the system.
+%% Creates a static vhost in the system.
 register(Host) when is_list(Host) -> ?MODULE:register(Host, "").
 register(Host, Config) when is_list(Host), is_list(Config) ->
     true = exmpp_stringprep:is_node(Host),
@@ -95,7 +46,7 @@ register(Host, Config) when is_list(Host), is_list(Config) ->
     reload(),
     ok.
 
-%% Updates host configuration
+%% Updates static host configuration
 update_host_conf(Host, Config) when is_list(Host), is_list(Config) ->
     true = exmpp_stringprep:is_node(Host),
     case registered(Host) of
@@ -105,8 +56,7 @@ update_host_conf(Host, Config) when is_list(Host), is_list(Config) ->
 	    ?MODULE:register(Host, Config)
     end.
 
-%% Removes a vhost from the system,
-%% XXX deleting all ODBC data.
+%% Removes a static vhost from the system,
 remove(Host) when is_list(Host) ->
     HostB = list_to_binary(Host),
     ejabberd_hooks:run(remove_host, HostB, [HostB]),
@@ -123,16 +73,17 @@ remove_host_info(Host) ->
     reload(),
     ok.
 
+%% Returns a list of currently running hosts, this list is made up of static hosts + dynamic hosts.
 registered() ->
-    mnesia:dirty_select(local_config,
-                        ets:fun2ms(fun (#local_config{key={Host, host}}) ->
-                                           Host
-                                   end)).
-
+	StaticHosts = get_static_hosts(),
+	AllHosts = lists:append(StaticHosts, get_dynamic_hosts()),
+	AllHosts.
+	
+%% Traverse static hosts then dynamic hosts to determine if a host is running.
 registered(Host) when is_list(Host) ->
-    case mnesia:dirty_read({local_config, {Host, host}}) of
+	case mnesia:dirty_read({local_config, {Host, host}}) of
         [{local_config, {Host, host}, _}] -> true;
-        [] -> false
+        [] -> lists:member(Host, get_dynamic_hosts())
     end.
 
 running(global) -> true;
@@ -144,10 +95,8 @@ running(HostString) when is_list(HostString) ->
     Routes =/= [].
 
 
-load_host_cert(Host, PemData) ->
-    File = cert_filename(Host),
-    ok = file:write_file(File, PemData),
-    configure_host_cert(Host, File).
+
+
 
 %%--------------------------------------------------------------------
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
@@ -168,12 +117,17 @@ start_link() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    Backend = mnesia, %%+++ TODO: allow to configure this in ejabberd.cfg
+    % Updates ejabberd_config to indicate which hosts are static and thereby permanent.
     configure_static_hosts(),
-    get_clusterid(), %% this is to report an error if the option wasn't configured
+    get_clusterid(),  %% this is to report an error if the option wasn't configured
     ejabberd_commands:register_commands(commands()),
-    %% Wait up to 120 seconds for odbc to start
-    {ok, #state{state=wait_odbc,backend=Backend,odbc_wait_time=?ODBC_STARTUP_TIME}, timer:seconds(1)}.
+    % Issue a preemptive startup call to mod_http_request since we need that to retrive dynamic hosts.
+    %mod_http_request:start("localhost",""), %% read options from config.
+    % Set up a memory based table to hold dynamic hosts. Memory based since we need to handle A LOT of
+    % of virtual hosts and performance is a virtue.
+    ets:new(dynamic_hosts,[named_table]),
+    % Set state=startup to let gen_server retrieve and start dynamic hosts in next step.
+    {ok, #state{state=startup}, timer:seconds(1)}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -203,44 +157,38 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-%% Wait for odbc to start.
-handle_info(timeout, State = #state{state=wait_odbc,backend=Backend,odbc_wait_time=N}) when N > 0 ->
-    case (Backend /= odbc) orelse ejabberd_odbc:running(?MYNAME) of
-        true ->
-            ?DEBUG("ejabberd_hosts: odbc now running.",[]),
-
-	    %% The table 'hosts' is defined in gen_storage as being for the "localhost" vhost
-	    Host = ?MYNAME,
-	    HostB = list_to_binary(Host),
-	    gen_storage:create_table(Backend, HostB, hosts,
-				     [{disc_only_copies, [node()]},
-				      {odbc_host, Host},
-				      {attributes, record_info(fields, hosts)},
-				      {types, [{host, text},
-					       {clusterid, int},
-					       {config, text}]}]),
-
-            self() ! reload,
-            timer:send_interval(?RELOAD_INTERVAL, reload),
-            {noreply, State#state{state=running,odbc_wait_time=0}};
-        false ->
-            {noreply,State#state{odbc_wait_time=N-1},timer:seconds(1)}
-    end;
-handle_info(timeout, State=#state{state=running}) ->
-    ?WARNING_MSG("Spurious timeout message when odbc is already running.", []),
-    {noreply, State};
-
-handle_info(reload, State = #state{state=running}) ->
-    try reload_hosts()
+handle_info(timeout, State = #state{state=startup}) ->
+	?INFO_MSG("Initializing virtualhosts (this could take some time if you have many virtual hosts) ...",[]),
+    try 
+		reload_dynamic_hosts(),
+		case length(get_dynamic_hosts()) of
+			0 ->
+				?INFO_MSG("No virtual hosts added, are you sure this is what you wanted?", []);
+			N ->
+				?INFO_MSG("Added ~p virtual hosts, good boy!!", [N])
+		end
     catch
         Class:Error ->
             StackTrace = erlang:get_stacktrace(),
             ?ERROR_MSG("~p while synchonising running vhosts with database: ~p~n~p", [Class, Error, StackTrace])
     end,
+	timer:send_interval(?RELOAD_INTERVAL, reload),
+	{noreply, State#state{state=running}};
+            
+handle_info(timeout, State=#state{state=running}) ->
+    ?WARNING_MSG("Spurious timeout message when server is already running.", []),
     {noreply, State};
-handle_info(reload, State = #state{state=wait_odbc}) ->
-    ?ERROR_MSG("Tried to reload vhosts while waiting for odbc startup.", []),
-    handle_info(timeout, State);
+
+handle_info(reload, State = #state{state=running}) ->
+    ?DEBUG("Reload call, state=running",[]),
+    try reload_dynamic_hosts()
+    catch
+        Class:Error ->
+            StackTrace = erlang:get_stacktrace(),
+            ?ERROR_MSG("~p while synchonising running vhosts with database: ~p~n~p", [Class, Error, StackTrace])
+    end,
+	{noreply,State};
+
 
 handle_info({reload, Host}, State = #state{state=running}) ->
     try reload_host(Host)
@@ -250,9 +198,7 @@ handle_info({reload, Host}, State = #state{state=running}) ->
             ?ERROR_MSG("~p while synchonising running ~p with database: ~p~n~p", [Host, Class, Error, StackTrace])
     end,
     {noreply, State};
-handle_info({reload, Host}, State = #state{state=wait_odbc}) ->
-    ?ERROR_MSG("Tried to reload ~p while waiting for odbc startup.", [Host]),
-    handle_info(timeout, State);
+
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -275,32 +221,96 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+
+
+
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-reload_hosts() ->
-    reload_hosts(get_hosts(odbc)).
+% For legacy compability.
+%get_hosts(ejabberd) -> ?MODULE:registered().
 
-reload_hosts(NewHosts) ->
-    {AddedHosts,RemovedHosts} = diff_hosts(NewHosts),
-    %% Avoid removing permanent hosts (staticly configured hosts)
-    DeletedHosts = [H || H <- RemovedHosts,
-                         ejabberd_config:get_host_option(H, permanent) =/= true],
-    AddHostConfig = lists:map(fun (Host) ->
-                                      {Host, get_host_config(odbc,Host)}
-                              end, AddedHosts),
-    update_config(AddHostConfig,DeletedHosts),
-    RemovedNotDelete = RemovedHosts -- DeletedHosts,
-    ejabberd_config:add_global_option(hosts, NewHosts++RemovedNotDelete), % overwrite hosts list
-    stop_hosts(DeletedHosts),
+get_static_hosts() -> 
+	mnesia:dirty_select(local_config,
+                        ets:fun2ms(fun (#local_config{key={Host, host}}) ->
+                                           Host
+                                   end)).
+
+get_dynamic_hosts() ->
+	DynHosts = ets:match(dynamic_hosts, {'$1', host}),
+	lists:map(fun lists:flatten/1,DynHosts).
+
+%% TODO fix to something better.
+%get_all_hosts() -> lists:append([get_static_hosts(), get_dynamic_hosts()]).
+
+add_dynamic_hosts(AddedHosts) ->
+	PrepHosts = [{Host, host} || Host <- AddedHosts],
+	ets:insert(dynamic_hosts, PrepHosts).
+
+remove_dynamic_hosts(RemovedHosts) ->
+	lists:map(fun(H) -> ets:delete_object(dynamic_hosts, {H,host}) end, RemovedHosts).
+
+
+is_dynamic_vhost(Host) -> ets:member(dynamic_hosts, Host). % O(~1)
+
+is_static_vhost(Host) -> lists:member(Host, get_static_hosts()). % O(n) but n is small.
+
+set_dynamic_hosts_hash(Hash) ->
+	ets:insert(dynamic_hosts, {hash, Hash}).
+
+get_dynamic_hosts_hash() ->
+	case ets:member(dynamic_hosts, hash) of
+		true ->
+			{_, HashB} = hd(ets:lookup(dynamic_hosts, hash)),
+			HashB;
+		false -> nothing
+	end.
+
+%% Retreives the lastes list of currently handled domains from the opera api and
+%% calculates the hash value for those, if the hash is different from current 
+%% something have changed on the opera side and we trigger an update by sending
+%% back list of domains to be handled. If the hash value is equal to current 
+%% nothing have changed and we just send back and empty list, indicating no change.
+reload_dynamic_hosts() ->
+	IncommingHosts = opera_api:get_domains(),
+    CurrentHash = get_dynamic_hosts_hash(),
+    IncommingHash = sha:sha1(IncommingHosts),
+    
+	?DEBUG("Current dynamic hosts: ~p~n...with hash: ~n~p~nIncommingHosts:~n~p~n...with hash: ~p",[get_dynamic_hosts(),CurrentHash,IncommingHosts,IncommingHash]),
+	case CurrentHash /= IncommingHash of
+		true ->
+			?DEBUG("Hash for domain list differs, I will now update handled virtual hosts.",[]),
+			reload_dynamic_hosts(IncommingHosts),
+			set_dynamic_hosts_hash(IncommingHash);
+		false ->
+			?DEBUG("Domains list have not changed, will NOT preform update. Returning []",[]),
+			nothing
+	end.
+
+
+reload_dynamic_hosts(NewHosts) ->
+	%% Calculates the diff between currently defined hosts and the batch of incomming host that contain one or more differences between currently defined hosts
+    {AddedHosts,RemovedHosts} = diff_hosts(NewHosts, get_dynamic_hosts()),
+	add_dynamic_hosts(AddedHosts),
+	remove_dynamic_hosts(RemovedHosts),
+	%	ejabberd_config:add_global_option(hosts,lists:append(get_static_hosts(),get_dynamic_hosts())),
+	%    F = fun () ->
+    %            lists:foreach(fun (H) -> ejabberd_config:configure_host(H, [{permanent, false}]) end, get_dynamic_hosts())
+    %    end,
+    %mnesia:transaction(F),
+    %ejabberd_config:configure_dynamic_hosts(AddedHosts),
+    %ejabberd_config:delete_dynamic_option(RemovedHosts),
+    %ejabberd_config:add_global_option(hosts, NewHosts++RemovedNotDelete), % overwrite hosts list
+    stop_hosts(RemovedHosts),
     start_hosts(AddedHosts),
     ejabberd_local:refresh_iq_handlers(),
-    {DeletedHosts, AddedHosts}.
-
+    {RemovedHosts, AddedHosts}.
+    
 %% updates the configuration of an existing virtual host
 reload_host(Host) ->
-    Config = get_host_config(odbc,Host),
+    Config = [],
     F = fun() ->
 		mnesia:write_lock_table(local_config),
 		ejabberd_config:configure_host(Host, Config),
@@ -313,25 +323,15 @@ reload_host(Host) ->
     ejabberd_local:refresh_iq_handlers(),
     ok.
 
-%% Apply the vhost changes (new, removed vhosts, configuration) to mnesia
-update_config(AddHostConfig, RemoveHosts) ->
-    F = fun() ->
-                mnesia:write_lock_table(local_config),
-                lists:foreach(fun configure_new_host/1, AddHostConfig),
-                lists:foreach(fun delete_host_config/1, RemoveHosts),
-                ok
-        end,
-    {atomic, ok} = mnesia:transaction(F).
-
-%% Write the configuration data for a new vhost to mnesia (currently only modules)
-configure_new_host({H, Config}) when is_list(Config) ->
-    reconfigure_host_cert(H),
-    ejabberd_config:configure_host(H, Config).
-
-%% Delete the mnesia config data for a vhost.
-%% Needs to mirror any data we insert in configure_new_host (currently only modules)
-delete_host_config(Host) ->
-    ejabberd_config:delete_host(Host).
+%% Given the new list of vhosts and the old list, return the list of
+%% hosts added since last time and the list of hosts that have been
+%% removed.
+%% Calculates the diff between currently defined hosts and the batch of incomming host that contain one or more differences between currently defined hosts
+diff_hosts(NewHosts, OldHosts) ->
+    RemoveHosts = OldHosts -- NewHosts,
+    AddHosts = NewHosts -- OldHosts,
+    {AddHosts,RemoveHosts}.   
+    
 
 %% Startup a list of vhosts
 start_hosts([]) -> ok;
@@ -342,11 +342,13 @@ start_hosts(AddHosts) when is_list(AddHosts) ->
 %% Start a single vhost (route, modules)
 start_host(Host) when is_list(Host) ->
     ?DEBUG("Starting host ~p", [Host]),
+    %io:format("."),
     ejabberd_router:register_route(Host, {apply, ejabberd_local, route}),
     case ejabberd_config:get_local_option({modules, Host}) of
-        undefined -> ok;
+        undefined -> 
+			ok;
         Modules when is_list(Modules) ->
-            lists:foreach(
+			lists:foreach(
               fun({Module, Args}) ->
                       gen_mod:start_module(Host, Module, Args)
               end, Modules)
@@ -354,11 +356,12 @@ start_host(Host) when is_list(Host) ->
     ejabberd_auth:start(Host),
     ok.
 
+    
 
 %% Shut down a list of vhosts.
 stop_hosts([]) -> ok;
 stop_hosts(RemoveHosts) when is_list(RemoveHosts)->
-    ?DEBUG("ejabberd_hosts removing hosts: ~p", [RemoveHosts]),
+	?DEBUG("ejabberd_hosts removing hosts: ~P", [RemoveHosts, 10]),
     lists:foreach(fun stop_host/1, RemoveHosts).
 
 %% Shut down a single vhost. (Routes, modules)
@@ -370,26 +373,6 @@ stop_host(Host) when is_list(Host) ->
                   end, gen_mod:loaded_modules(Host)),
     ejabberd_auth:stop(Host).
 
-%% Get the current vhost list from a variety of sources (ODBC, internal)
-get_hosts(ejabberd) -> ?MYHOSTS;
-get_hosts(odbc) ->
-    ClusterID = get_clusterid(),
-    Hosts = gen_storage:dirty_select(?HOSTS_HOST, hosts, [{'=', clusterid, ClusterID}]),
-    lists:map(fun (#hosts{host = Host}) ->
-	exmpp_stringprep:nameprep(Host)
-    end, Hosts).
-
-%% Retreive the text format config for host Host from ODBC and covert
-%% it into a {host, Host, Config} tuple.
-get_host_config(odbc, Host) ->
-    case gen_storage:dirty_read(?HOSTS_HOST, hosts, Host) of
-        [] ->
-            erlang:error({no_such_host, Host});
-        [H] ->
-            config_from_string(Host, H#hosts.config);
-        E ->
-            erlang:error({host_config_error, E})
-    end.
 
 %% Convert a plaintext string into a host config tuple.
 config_from_string(_Host, "") -> [];
@@ -402,49 +385,18 @@ config_from_string(_Host, Config) ->
             erlang:error({bad_host_config, Config, E})
     end.
 
-diff_hosts() ->
-    diff_hosts(get_hosts(odbc)).
-
-diff_hosts(NewHosts) ->
-    diff_hosts(NewHosts, get_hosts(ejabberd)).
-
-%% Given the new list of vhosts and the old list, return the list of
-%% hosts added since last time and the list of hosts that have been
-%% removed.
-diff_hosts(NewHosts, OldHosts) ->
-    RemoveHosts = OldHosts -- NewHosts,
-    AddHosts = NewHosts -- OldHosts,
-    {AddHosts,RemoveHosts}.    
-
 configure_static_hosts() ->
     ?DEBUG("Node startup - configuring hosts: ~p", [?MYHOSTS]),
     %% Add a null configuration for all MYHOSTS - this ensures
     %% the 'I'm a host' term gets written to the config table.
     %% We don't need any configuration options because these are
     %% statically configured hosts already configured by ejabberd_config.
+    ?INFO_MSG("Configuring static hosts: ~p", [?MYHOSTS]),
     F = fun () ->
-                lists:foreach(fun (H) -> ejabberd_config:configure_host(H, [{permanent, true}]) end,
-                              ?MYHOSTS)
+                lists:foreach(fun (H) -> ejabberd_config:configure_host(H, [{permanent, true}]) end, ?MYHOSTS)
         end,
     mnesia:transaction(F).
 
-cert_filename(Host) ->
-    Dir = ejabberd_config:get_local_option({domain_certdir, global}),
-    filename:join(Dir, Host ++ ".pem").
-
-configure_host_cert(Host, File) ->
-    ejabberd_config:add_local_option({domain_certfile, Host}, File),
-    ok.
-
-reconfigure_host_cert(Host) ->
-    File = cert_filename(Host),
-    case ejabberd_config:is_file_readable(File) of
-        true ->
-            ejabberd_config:mne_add_local_option({domain_certfile, Host}, File),
-            ok;
-        false ->
-            no_cert
-    end.
 
 get_clusterid() ->
     case ejabberd_config:get_local_option(clusterid) of

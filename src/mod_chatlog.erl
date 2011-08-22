@@ -14,7 +14,7 @@
 -include("ejabberd.hrl").
 
 %% External API
--export([start/2, stop/1, process_send_packet/3]).
+-export([start/2, stop/1, process_packet/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -59,16 +59,14 @@ stop(_Host) ->
 %%		From = exmpp:jid()
 %%		To = exmpp:jid()
 %%		Packet = exmpp_xml:xmlel()
-process_send_packet(From, To, Packet) ->
+process_packet({From, To, Packet} = Input) ->
 	case exmpp_message:is_message(Packet) of
 		true ->
 			Request = {From, To, Packet},
 			gen_server:cast(?MODULE, Request);
 		_ -> ok
-	end.
-	
-
-			 
+	end,
+	Input.
 
 %%====================================================================
 %% gen_server callbacks
@@ -83,7 +81,7 @@ process_send_packet(From, To, Packet) ->
 %%--------------------------------------------------------------------
 init([]) ->
 	?INFO_MSG("Starting chatlog server ...",[]),
-	ejabberd_hooks:add(user_send_packet, global, ?MODULE, process_send_packet, 100),
+	ejabberd_hooks:add(filter_packet, global, ?MODULE, process_packet, 100),
 	%% Set up mnesia to hold the chat conversations.
 	CreateTableResult = mnesia:create_table(chatlog, [{type, bag}, {disc_copies, [node()]}, {attributes, record_info(fields, chatlog)}]),
 	%% Set up an ETS table to hold the logsize of the different conversations. Reason for

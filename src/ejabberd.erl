@@ -74,17 +74,21 @@ get_bin_path() ->
 is_my_host([$* | _]) ->
     false;
 is_my_host(Host) ->
-    case ejabberd_config:get_local_option({Host, host}) of
-	undefined ->
-	    WCHost = re:replace(Host, "^[^.]*\.", "*.", [{return, list}]),
-	    case ejabberd_config:get_local_option({WCHost, host}) of
+    case ejabberd_hosts:is_dynamic_vhost(Host) of
+	true -> true;
+	_ ->
+	    case ejabberd_config:get_local_option({Host, host}) of
+	    undefined ->
+		WCHost = re:replace(Host, "^[^.]*\.", "*.", [{return, list}]),
+		case ejabberd_config:get_local_option({WCHost, host}) of
 		undefined ->
 		    false;
 		_ ->
 		    true
-	    end;
-	_ ->
-	    true
+		end;
+	    _ ->
+		true
+	    end
     end.
 
 normalize_host(global) ->

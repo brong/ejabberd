@@ -55,6 +55,9 @@ start(normal, _Args) ->
     gen_mod:start(),
     ejabberd_config:start(),
     ejabberd_check:config(),
+    %% must start opera_http after config loaded, but before
+    %% any modules which require http requests for data
+    opera_http_request:start(),
     connect_nodes(),
     %% Loading ASN.1 driver explicitly to avoid races in LDAP
     catch asn1rt:load_driver(),

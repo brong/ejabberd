@@ -84,6 +84,14 @@ init([]) ->
 	ejabberd_hooks:add(filter_packet, global, ?MODULE, process_packet, 100),
 	%% Set up mnesia to hold the chat conversations.
 	CreateTableResult = mnesia:create_table(chatlog, [{type, bag}, {disc_copies, [node()]}, {attributes, record_info(fields, chatlog)}]),
+	case CreateTableResult of
+		{atomic, ok} -> ok;
+		{aborted, Reason} ->
+			case Reason of 
+				{already_exists, _Table} -> ok;
+				_ -> exit(Reason)
+			end
+	end,
 	%% Set up an ETS table to hold the logsize of the different conversations. Reason for
 	%% having a separate memory based table for this is performance and the inability to 
 	%% easily calculate the size of mnesia records. 

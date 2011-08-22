@@ -72,6 +72,7 @@
 	 process_local_iq/3,
 	 process_sm_iq/3,
 	 reindex_vcards/0,
+	 do_route/4,
 	 webadmin_page/3,
 	 webadmin_user/4,
 	 webadmin_user_parse_query/5,

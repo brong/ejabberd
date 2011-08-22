@@ -96,10 +96,6 @@ init([]) ->
 	%% having a separate memory based table for this is performance and the inability to 
 	%% easily calculate the size of mnesia records. 
 	ets:new(chatlog_meta,[named_table, set, public]),
-	case CreateTableResult of
-		{atomic, ok} -> ok;
-		{abort, Reason} -> exit(Reason)
-	end,
 	%% Set server timeout for synchronizing with backlog server.
 	timer:send_interval(?RELOAD_INTERVAL, synchronize_chatlog),
     {ok, #state{state=running}}.

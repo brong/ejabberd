@@ -21,8 +21,10 @@
 %debug
 -compile(export_all).
 
--define(RELOAD_INTERVAL, timer:seconds(10)).	% Check for old conversations every 10 seconds.
--define(INACTIVE_CONVERSATION_INTERVAL, 300).	% Seconds, different syntax due to unixtime.
+% Check for old conversations every 10 seconds.
+-define(RELOAD_INTERVAL, timer:seconds(10)).
+% Seconds, different syntax due to unixtime.
+-define(INACTIVE_CONVERSATION_INTERVAL, ejabberd_config:get_local_option(chat_idle_timeout)).
 
 -record(state, {state=stopped}).
 -record(key,{jid_one,jid_two}). 			 % to force the key for mnesia table to the form of {User, Contact}

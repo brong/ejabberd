@@ -106,7 +106,7 @@ get_roster_helper(User, [{struct, CurrentItem} | RosterList], Acc) ->
 	ContactJid = exmpp_jid:parse(proplists:get_value("jid", CurrentItem)),
 	ShortContactJid = jlib:short_jid(ContactJid),
 	% Get contact name from proplist (the json response).
-	ContactName = list_to_binary(proplists:get_value("name", CurrentItem)),
+	ContactName = unicode:characters_to_binary(proplists:get_value("name", CurrentItem)),
 	Subscription = get_subscription_state(proplists:get_value("subscription", CurrentItem)),
 	Ask = case proplists:get_value("subscription", CurrentItem) of
 				undefined -> none;

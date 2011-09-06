@@ -187,11 +187,11 @@ process_message(From, To, MessagePacket) ->
 	HasBody = exmpp_xml:has_element(MessagePacket, body),
 	if (Type /= <<"error">>) and (Type /= <<"groupchat">>) and (Type /= <<"headline">>) and (HasBody == true) ->
 		%% Create key unique for the two participants in conversation.
-		LFrom = exmpp_jid:bare_to_list(From),
-		LTo = exmpp_jid:bare_to_list(To),
+		LFrom = exmpp_stringprep:to_lower(exmpp_jid:bare_to_list(From)),
+		LTo = exmpp_stringprep:to_lower(exmpp_jid:bare_to_list(To)),
 		ChatlogKey = erlang:list_to_tuple(lists:sort([LFrom, LTo])),
 		Message = exmpp_message:get_body(MessagePacket),
-		
+
 		case within_logsize_limit(ChatlogKey) of
 			false ->
 				push_chatlog(ChatlogKey),
@@ -199,7 +199,7 @@ process_message(From, To, MessagePacket) ->
 			_ -> nothing
 		end,
 		store_message(ChatlogKey, LFrom, LTo, Message);
-		
+
 	true -> ok
 	end,
 	ok.

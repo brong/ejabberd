@@ -239,7 +239,7 @@ set_conversation_size(ChatlogKey, Size) ->
 %%
 %% @doc Updates current timestamp on converation with current unixtime.
 timestamp_conversation(ChatlogKey) ->
-	ets:insert(chatlog_meta, {{ChatlogKey, timestamp}, make_timestamp()}).
+	ets:insert(chatlog_meta, {{ChatlogKey, timestamp}, make_gmtime()}).
 	
 %% @spec (ChatlogKey) -> integer()
 %%		ChatlogKey = mod_chatlog:chatlogkey()
@@ -265,7 +265,7 @@ clear_chatlog_meta(ChatlogKey) ->
 %%
 %% @doc Retrieves the chatlog keys for conversations older than ?INACTIVE_CONVERSATION_INTERVAL.
 select_inactive_conversations() ->
-	CurrentTime = make_timestamp(),
+	CurrentTime = make_gmtime(),
 	Match = {{'$1', timestamp}, '$2'},
 	Guard = {'>',{'-', CurrentTime, '$2'}, ?INACTIVE_CONVERSATION_INTERVAL},
 	ets:select(chatlog_meta, [{Match, [Guard], ['$1']}]).
@@ -276,7 +276,7 @@ select_inactive_conversations() ->
 %%
 %% @doc Stores a new message for a conversation in mnesia.
 store_message(ChatlogKey, From, To, Message) ->
-	Timestamp = make_timestamp(),
+	Timestamp = make_gmtime(),
 	Row = #chatlog{key=ChatlogKey, from=From, to=To, timestamp=Timestamp, message=Message},
 	Size = message_size(Message),
 	% Do all db related operations in transaction to avoid race condition.
@@ -337,10 +337,10 @@ push_opera_server(Record) ->
 		_ -> aborted
 	end.
 
-%% @doc Creates a UNIXTIME timestamp.
-make_timestamp() ->	
-	{Mega, Secs, _} = now(),
-	Mega*1000000 + Secs.
-
+%% @doc Creates a UNIXTIME timestamp: seconds since Jan 1st, 1970 in gmt.
+make_gmtime() ->
+	GrBase = calendar:datetime_to_gregorian_seconds({{1970,1,1}, {0,0,0}}),
+	GrNow = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+	GrNow - GrBase.
 
 

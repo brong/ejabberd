@@ -851,7 +851,8 @@ handle_info({timeout, Timer, _}, wait_before_retry,
 
 handle_info({timeout, Timer, _}, _StateName,
 	    #state{timer = Timer} = StateData) ->
-    ?INFO_MSG("Closing connection with ~s: timeout", [StateData#state.server]),
+    ?INFO_MSG("Closing s2s connection ~s -> ~s: timeout",
+	      [StateData#state.myname, StateData#state.server]),
     {stop, normal, StateData};
 
 handle_info(terminate_if_waiting_before_retry, wait_before_retry, StateData) ->

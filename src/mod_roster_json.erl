@@ -188,6 +188,7 @@ process_subscription(Direction, User, Server, Contact, Type, Reason) when is_bin
 							ItemXX#roster.ask == in ->
 								ok;
 					    true ->
+							%?INFO_MSG("pushing itemxx:~n~p~n~p~n~p~n~p",[User,Server,UserJid,ItemXX]),
 							opera_aux:push_item(User, Server, UserJid, ItemXX)
 						end,
 						true;

@@ -258,6 +258,7 @@ authenticate_user(User, Password) ->
 	ParamUser = {"username", Username},
 	ParamPassword = {"password", Password},
 	ParamIP = {"ip", ejabberd_sm:get_user_ip(User)},
+	?INFO_MSG("authenticate ip: ~p~n", [ParamIP]),
 	Request = [RequestType, ParamUser, ParamPassword, ParamIP],
 	case opera_http_request:exec_json_request(Request) of
 		{ok, _Response} ->

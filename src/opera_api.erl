@@ -303,55 +303,66 @@ get_domains() ->
 %%% VCard
 %%% ----------------------------------------------------------------------------
 
-		      
+vcard_to_json(FromStanza) ->
+    % convert the xml into a utf8 byte stream
+    ByteList = exmpp_xml:document_to_list(FromStanza),
+    % this is a list of separate utf8 bytes, so store as binary
+    list_to_binary(ByteList).
+
+json_to_vcard(FromJSON) ->
+    % this is a utf8 character stream coming back out
+    AsString = unicode:characters_to_binary(FromJSON),
+    % exmpp_xml expects to parse utf8 bytes
+    hd(exmpp_xml:parse_document(AsString)).
+
 %% @spec (User) -> vcard()
 %%		User = exmpp_jid:jid()
 %%		vcard() = ?
 %%
 %% @doc Retrives the VCard for a user.
 get_vcard(User) ->
-	LUser = exmpp_jid:bare_to_list(User),
-	RequestType = {"Action", "GetVCard"},
-	ParamUser = {"jid", LUser},
-	Request = [RequestType, ParamUser],
-	case opera_http_request:exec_json_request(Request) of
-		{ok, Response} ->
-			case proplists:get_value("vcard", Response) of
-				undefined ->
-					?DEBUG("No vcard seems to exists for user. Response was:~n~p",[Response]),
-					[];
-				VCard ->
-					VCard
-			end;
-		_ -> []
-	end.
+    LUser = exmpp_jid:bare_to_list(User),
+    RequestType = {"Action", "GetVCard"},
+    ParamUser = {"jid", LUser},
+    Request = [RequestType, ParamUser],
+    case opera_http_request:exec_json_request(Request) of
+	{ok, Response} ->
+	    case proplists:get_value("vcard", Response) of
+		undefined ->
+		    ?DEBUG("No vcard seems to exists for user. Response was:~n~p",[Response]),
+		    [];
+		VCard ->
+		    json_to_vcard(VCard)
+	    end;
+	_ -> []
+    end.
 
 
 %% @spec (User, VCard) -> vcard()
 %%		User = exmpp_jid:jid()
-%%		VCard = ?
-%%		vcard() = ?
+%%		VCard = XML document
+%%		vcard() = XML document
 %%
 %% @doc Updates the VCard for a user.
 %% TODO needs to parse vcard. Should not be a problem, simple xml, check perl script.
-set_vcard(User, VCard) ->
-	LUser = exmpp_jid:bare_to_list(User),
-	RequestType = {"Action", "SetVCard"},
-	ParamUser = {"jid", LUser},
-	ParamVCard = {"vcard", VCard}, % FIXME!
-	Request = [RequestType, ParamUser, ParamVCard],
-	case opera_http_request:exec_json_request(Request) of
-		{ok, Response} ->
-			case proplists:get_value("vcard", Response) of
-				undefined ->
-					[];
-				VCard ->
-					% Updated item is pushed backed to callee.
-					VCard
-			end;
-		_ -> []
-	end.
-	
+set_vcard(User, VCardIn) ->
+    LUser = exmpp_jid:bare_to_list(User),
+    RequestType = {"Action", "SetVCard"},
+    ParamUser = {"jid", LUser},
+    ParamVCard = {"vcard", vcard_to_json(VCardIn)}, 
+    Request = [RequestType, ParamUser, ParamVCard],
+    case opera_http_request:exec_json_request(Request) of
+	{ok, Response} ->
+	    case proplists:get_value("vcard", Response) of
+		undefined ->
+		    [];
+		VCardOut ->
+		    % Updated item is pushed backed to callee.
+		    json_to_vcard(VCardOut)
+	    end;
+	_ -> []
+    end.
+
 
 %%% ----------------------------------------------------------------------------
 %%% Offline storage (XEP-0160)

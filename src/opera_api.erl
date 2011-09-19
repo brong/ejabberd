@@ -114,10 +114,10 @@ get_roster_helper(User, [{struct, CurrentItem} | RosterList], Acc) ->
 		  end,
 	Groups = case proplists:get_value("groups", CurrentItem) of
 				undefined -> [];
-				{array, List} -> lists:map(fun list_to_binary/1, List);
+				{array, List} -> lists:map(fun unicode:characters_to_binary/1, List);
 				{_, []} -> []
 			 end,
-	Askmessage = list_to_binary(""), % should be ignored if Ask = none. % TODO seems like not implemented in JSON API..?
+	Askmessage = unicode:characters_to_binary(""), % should be ignored if Ask = none. % TODO seems like not implemented in JSON API..?
 	% Build rest of structures.
 	{jid, _BareJid, UserNode, UserServer, _UserResource} = User,
 	USJ = {UserNode,UserServer,ShortContactJid},
@@ -145,7 +145,7 @@ encode_roster_item(RosterItem) ->
 	ParamContact = {jid, jlib:jid_to_string(J)},
 	ParamName = {name, Name},
 	ParamSubscription = {subscription, subscription_state_to_bitmask({Subscription, Ask})},
-	ParamGroups = {groups, {array, lists:map(fun erlang:binary_to_list/1, Groups)}},
+	ParamGroups = {groups, {array, lists:map(fun unicode:characters_to_list/1, Groups)}},
 
 	PreparedItem = {struct,[ParamContact, ParamName, ParamSubscription, ParamGroups]},
 	PreparedItem.

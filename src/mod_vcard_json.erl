@@ -60,18 +60,17 @@ process_sm_iq(From, _To, #iq{type = set, payload = Request} = IQ_Rec) ->
 
 %% @spec (User::binary(), Host::binary()) -> {vcard, xmlel()} | novcard
 get_vcard(User, Host) ->
-    UserJid = exmpp_jid:make(User, Host),
-    case opera_api:get_vcard(UserJid) of
+	UserJid = exmpp_jid:make(User, Host),
+	case opera_api:get_vcard(UserJid) of
 		[] ->
 		    novcard;
-		XML_VCard ->
-		    {vcard, hd(exmpp_xml:parse_document(XML_VCard))}
-    end.
+		VCard ->
+		    {vcard, VCard}
+	end.
 
-
-set_vcard(User, Server, VCARD) ->
-	opera_api:set_vcard(exmpp_jid:make(User,Server),exmpp_xml:document_to_list(VCARD)),
-	ejabberd_hooks:run(vcard_set, Server, [User, Server, VCARD]).
+set_vcard(User, Server, VCard) ->
+	opera_api:set_vcard(exmpp_jid:make(User,Server), VCard),
+	ejabberd_hooks:run(vcard_set, Server, [User, Server, VCard]).
   
 
 

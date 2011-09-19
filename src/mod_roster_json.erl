@@ -166,8 +166,10 @@ process_subscription(Direction, User, Server, Contact, Type, Reason) when is_bin
 							end,
 				NewItem = Item#roster{subscription = Subscription,ask = Pending,askmessage = AskBinary},
 				SavedItem = opera_api:set_roster_item(UserJid, NewItem),
-				%SavedItem = opera_api:add_update_roster_item(UserJid, NewItem),
-				{{push, SavedItem}, AutoReply}
+				case SavedItem of
+				    SI when is_record(SI, roster) -> {{push, SI}, AutoReply};
+				    _ -> {none, AutoReply}
+				end
 		end,
 		%% We also need to tell the client about whats going on. This according to: (RFC3921). 
 		%% We must make a roster push (i.e. send a copy of affected items) to the different resources

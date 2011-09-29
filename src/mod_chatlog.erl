@@ -329,6 +329,7 @@ push_chatlog(ChatlogKey) ->
 %%
 %% @doc Stores a conversation between two users. A separete copy is stored for each user.
 push_opera_server(Record) ->
+	?INFO_MSG("ChatLoggingMessages ~p", [Record]),
 	{{JidOne,JidTwo}, Messages} = Record,
 	R1 = opera_api:store_chatlog(JidOne, JidTwo, Messages),
 	R2 = opera_api:store_chatlog(JidTwo, JidOne, Messages),

@@ -244,15 +244,22 @@ wipe_roster(User) ->
 %%% Authentication
 %%% ----------------------------------------------------------------------------
 
+security_uses_ssl(Security) ->
+	case Security of
+	    tls -> true;
+	    _ -> false
+	end.
+
 %% @spec (User, Password) -> bool()
 %%		User = exmpp_jid:jid()
 %%		Password = string()
 %%		bool() = {true, Response} | false
 %%
 %% @doc Authenticate a user.
-authenticate_user(User, Password, IP, Ssl) ->
+authenticate_user(User, Password, IP, Security) ->
 	%% For simple debug, make sure allways succeed.
 %	true.	
+	Ssl = security_uses_ssl(Security),
 	?INFO_MSG("authenticate ip: ~p ssl: ~p~n", [IP, Ssl]),
 	Username = exmpp_jid:bare_to_list(User),
 	RequestType = {"Action", "CheckLogin"},

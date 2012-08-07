@@ -9,6 +9,7 @@
 	 stop/1,
 	 set_password/3,
 	 check_password/3,
+	 check_password/4,
 	 check_password/5,
 	 try_register/3,
 	 dirty_get_registered_users/0,
@@ -23,6 +24,38 @@
 	 plain_password_required/0
 	]).
 
+
+-record(state, {socket,
+		sockmod,
+		socket_monitor,
+		xml_socket,
+		streamid,
+		sasl_state,
+		access,
+		shaper,
+		zlib = false,
+		tls = false,
+		tls_required = false,
+		tls_enabled = false,
+		tls_options = [],
+		authenticated = false,
+		jid,
+		user = undefined, server = list_to_binary(?MYNAME), resource = undefined,
+		sid,
+		pres_t,
+		pres_f,
+		pres_a,
+		pres_i,
+		pres_last, pres_pri,
+		pres_timestamp,
+		privacy_list,
+		conn = unknown,
+		auth_module = unknown,
+		ip,
+		aux_fields = [],
+		fsm_limit_opts,
+		lang,
+        flash_connection = false}).
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -52,6 +85,15 @@ store_type() ->
 check_password(User, Server, Password) ->
 	Jid = exmpp_jid:make(User, Server),
 	opera_api:authenticate_user(Jid, Password).
+
+
+check_password(User, Server, Password, SocketState) ->
+	%?INFO_MSG("STATE: ~p~n", [SocketState]),
+	{{Octet1,Octet2,Octet3,Octet4}, Port} = SocketState#state.ip,
+	IP = lists:flatten(io_lib:format("~b.~b.~b.~b:~b)", [Octet1, Octet2, Octet3, Octet4, Port])),
+	{_, Security, _, _} = SocketState#state.socket,
+	Jid = exmpp_jid:make(User, Server),
+	opera_api:authenticate_user(Jid, Password, IP, Security).
 
 %% @spec (User, Server, Password, Digest, DigestGen) -> bool()
 %%     User = string()

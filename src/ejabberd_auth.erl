@@ -35,6 +35,7 @@
 	 check_password/3,
 	 check_password/5,
 	 check_password_with_authmodule/3,
+	 check_password_with_authmodule/4,
 	 check_password_with_authmodule/5,
 	 try_register/3,
 	 dirty_get_registered_users/0,
@@ -64,6 +65,7 @@
 -export([auth_modules/1]).
 
 -include("ejabberd.hrl").
+
 
 %% @type authmodule() = ejabberd_auth_anonymous | ejabberd_auth_external |
 %%                      ejabberd_auth_ldap | ejabberd_auth_pam |
@@ -175,6 +177,13 @@ check_password(User, Server, Password, Digest, DigestGen)
 check_password_with_authmodule(User, Server, Password)
   when is_list(User), is_list(Server), is_list(Password) ->
     check_password_loop(auth_modules(Server), [User, Server, Password], "").
+
+
+
+
+check_password_with_authmodule(User, Server, Password, SocketState)
+  when is_list(User), is_list(Server), is_list(Password) ->
+    check_password_loop(auth_modules(Server), [User, Server, Password, SocketState], "").
 
 %% @spec (User, Server, Password, Digest, DigestGen) -> {true, AuthModule} | false
 %%     User = string()

@@ -36,3 +36,8 @@
 /src/eldap/ELDAPv3.hrl
 /src/eldap/eldap_filter_yecc.erl
 /src/epam
+Mnesia*
+*.cfg
+*.log
+*.dump
+

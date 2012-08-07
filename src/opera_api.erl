@@ -19,7 +19,7 @@
 	set_roster_item/2,
 	add_update_roster_item/2,
 	wipe_roster/1,
-	authenticate_user/2,
+	authenticate_user/4,
 	get_vcard/1,
 	set_vcard/2,
 	get_domains/0,
@@ -250,16 +250,18 @@ wipe_roster(User) ->
 %%		bool() = {true, Response} | false
 %%
 %% @doc Authenticate a user.
-authenticate_user(User, Password) ->
+authenticate_user(User, Password, IP, Ssl) ->
 	%% For simple debug, make sure allways succeed.
 %	true.	
+	?INFO_MSG("authenticate ip: ~p ssl: ~p~n", [IP, Ssl]),
 	Username = exmpp_jid:bare_to_list(User),
 	RequestType = {"Action", "CheckLogin"},
 	ParamUser = {"username", Username},
 	ParamPassword = {"password", Password},
-	ParamIP = {"ip", ejabberd_sm:get_user_ip(User)},
-	?INFO_MSG("authenticate ip: ~p~n", [ParamIP]),
-	Request = [RequestType, ParamUser, ParamPassword, ParamIP],
+	ParamIP = {"ip", IP},
+	ParamSsl = {"ssl", Ssl},
+	Request = [RequestType, ParamUser, ParamPassword, ParamIP, ParamSsl],
+	% Request = [RequestType, ParamUser, ParamPassword, ParamIP],
 	case opera_http_request:exec_json_request(Request) of
 		{ok, _Response} ->
 			%% Currently ignoring possible flags suppied such as 'loggin enabled'

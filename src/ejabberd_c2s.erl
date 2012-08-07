@@ -353,6 +353,7 @@ get_subscribed(FsmRef) ->
 %%          {stop, Reason, NewStateData}
 %%----------------------------------------------------------------------
 
+
 wait_for_stream({xmlstreamstart, #xmlel{ns = NS, name = Name} = Opening},
                 StateData) ->
     DefaultLang = case ?MYLANG of
@@ -414,7 +415,7 @@ wait_for_stream({xmlstreamstart, #xmlel{ns = NS, name = Name} = Opening},
 					  end,
 					  fun(U, P) ->
 						  ejabberd_auth:check_password_with_authmodule(
-						    U, Server, P)
+						    U, Server, P, StateData)
 					  end,
 					  fun(U, P, D, DG) ->
 						  ejabberd_auth:check_password_with_authmodule(

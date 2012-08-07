@@ -89,8 +89,8 @@ check_password(User, Server, Password) ->
 
 check_password(User, Server, Password, SocketState) ->
 	%?INFO_MSG("STATE: ~p~n", [SocketState]),
-	{{Octet1,Octet2,Octet3,Octet4}, Port} = SocketState#state.ip,
-	IP = lists:flatten(io_lib:format("~b.~b.~b.~b:~b)", [Octet1, Octet2, Octet3, Octet4, Port])),
+	{{Octet1,Octet2,Octet3,Octet4}, _} = SocketState#state.ip,
+	IP = lists:flatten(io_lib:format("~b.~b.~b.~b", [Octet1, Octet2, Octet3, Octet4])),
 	{_, Security, _, _} = SocketState#state.socket,
 	Jid = exmpp_jid:make(User, Server),
 	opera_api:authenticate_user(Jid, Password, IP, Security).
